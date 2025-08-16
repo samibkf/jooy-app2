@@ -2,11 +2,10 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import WorksheetViewer from "@/components/WorksheetViewer";
-import AutoModeContentDisplay from "@/components/AutoModeContentDisplay";
 import AIChatButton from "@/components/AIChatButton";
 import { Button } from "@/components/ui/button";
 import { useWorksheetData } from "@/hooks/useWorksheetData";
-import type { RegionData, AutoModeMetadata } from "@/types/worksheet";
+import type { RegionData } from "@/types/worksheet";
 
 interface StoredRegionData {
   currentStepIndex: number;
@@ -293,37 +292,19 @@ const WorksheetPage: React.FC = () => {
     );
   }
 
-  // Check if this is auto mode
-  const isAutoMode = 'mode' in worksheetData.meta && worksheetData.meta.mode === 'auto';
-  
-  // Get page description for auto mode
-  const pageDescription = isAutoMode 
-    ? (worksheetData.meta as AutoModeMetadata).pages.find(p => p.page_number === pageIndex)?.page_description
-    : undefined;
-
   return (
     <div className="min-h-screen bg-gray-50">
-      {isAutoMode ? (
-        <AutoModeContentDisplay
-          worksheetId={id}
-          pageNumber={pageIndex}
-          worksheetMeta={worksheetData.meta as AutoModeMetadata}
-          onTextModeChange={setIsTextModeActive}
-          onRegionStateChange={handleRegionStateChange}
-        />
-      ) : (
-        <WorksheetViewer 
-          worksheetId={id} 
-          pageIndex={pageIndex} 
-          worksheetMeta={worksheetData.meta}
-          pdfUrl={worksheetData.pdfUrl}
-          onTextModeChange={setIsTextModeActive}
-          initialActiveRegion={initialActiveRegion}
-          initialCurrentStepIndex={initialCurrentStepIndex}
-          onRegionStateChange={handleRegionStateChange}
-          allRegionsState={allRegionsState}
-        />
-      )}
+      <WorksheetViewer 
+        worksheetId={id} 
+        pageIndex={pageIndex} 
+        worksheetMeta={worksheetData.meta}
+        pdfUrl={worksheetData.pdfUrl}
+        onTextModeChange={setIsTextModeActive}
+        initialActiveRegion={initialActiveRegion}
+        initialCurrentStepIndex={initialCurrentStepIndex}
+        onRegionStateChange={handleRegionStateChange}
+        allRegionsState={allRegionsState}
+      />
       <AIChatButton 
         worksheetId={id} 
         pageNumber={pageIndex} 
@@ -332,7 +313,6 @@ const WorksheetPage: React.FC = () => {
         currentStepIndex={currentStepIndex}
         pdfUrl={worksheetData.pdfUrl}
         worksheetMeta={worksheetData.meta}
-        pageDescription={pageDescription}
       />
     </div>
   );

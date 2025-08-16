@@ -26,18 +26,14 @@ serve(async (req) => {
     }
 
     // Initialize Supabase client
-    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    
-    // In Supabase Edge Functions, these environment variables are automatically available
-    // No need to check for them as they are always present
-    
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Fetch document metadata from 'documents' table, including the new metadata column
+    // Fetch document metadata from 'documents' table
     const { data: document, error: documentError } = await supabase
       .from('documents')
-      .select('*, metadata')
+      .select('*')
       .eq('id', worksheetId)
       .single()
 
@@ -47,6 +43,24 @@ serve(async (req) => {
         JSON.stringify({ error: 'Document not found' }),
         { 
           status: 404, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
+    }
+
+    // Fetch regions from 'document_regions' table using document_id
+    const { data: regions, error: regionsError } = await supabase
+      .from('document_regions')
+      .select('*')
+      .eq('document_id', worksheetId)
+      .order('page', { ascending: true })
+
+    if (regionsError) {
+      console.error('Document regions fetch error:', regionsError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch document regions' }),
+        { 
+          status: 500, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
       )
@@ -75,65 +89,10 @@ serve(async (req) => {
     }
 
     // DRM protection logic: Only use drm_protected_pages array
+    // The is_private flag is ignored for DRM protection
     const drmProtectedPages = document.drm_protected_pages || []
 
-    // Check if we have metadata with auto mode
-    if (document.metadata && document.metadata.mode === 'auto') {
-      // Process auto mode metadata
-      const autoMetadata = document.metadata
-      
-      // Ensure guidance descriptions are arrays of paragraphs
-      const processedPages = autoMetadata.pages.map(page => ({
-        ...page,
-        guidance: page.guidance.map(item => ({
-          ...item,
-          description: Array.isArray(item.description) 
-            ? item.description 
-            : typeof item.description === 'string' 
-              ? item.description.split('\n').filter(p => p.trim() !== '')
-              : []
-        }))
-      }))
-
-      const responseData = {
-        meta: {
-          mode: 'auto',
-          documentName: document.name,
-          documentId: document.id,
-          drmProtectedPages: drmProtectedPages,
-          pages: processedPages
-        },
-        pdfUrl
-      }
-
-      return new Response(
-        JSON.stringify(responseData),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Fallback to regions mode (legacy behavior)
-    // Fetch regions from 'document_regions' table using document_id
-    const { data: regions, error: regionsError } = await supabase
-      .from('document_regions')
-      .select('*')
-      .eq('document_id', worksheetId)
-      .order('page', { ascending: true })
-
-    if (regionsError) {
-      console.error('Document regions fetch error:', regionsError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch document regions' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
-
-    // Transform data to match expected RegionsModeMetadata format
+    // Transform data to match expected format
     const responseData = {
       meta: {
         documentName: document.name,
