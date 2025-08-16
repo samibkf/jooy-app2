@@ -38,29 +38,57 @@ export const useWorksheetData = (worksheetId: string) => {
         }
       }
 
-      // Use Supabase edge function to get both metadata and PDF URL
-      const { data, error } = await supabase.functions.invoke('get-worksheet-data', {
-        body: { worksheetId },
-      });
+      try {
+        // Use Supabase edge function to get both metadata and PDF URL
+        const { data, error } = await supabase.functions.invoke('get-worksheet-data', {
+          body: { worksheetId },
+        });
 
-      if (error) {
-        throw new Error(`Failed to fetch worksheet: ${error.message}`)
-      }
+        if (error) {
+          throw new Error(`Failed to fetch worksheet: ${error.message}`)
+        }
 
-      if (!data?.meta || !data?.pdfUrl) {
-        throw new Error('Invalid response from worksheet data function')
-      }
+        if (!data?.meta || !data?.pdfUrl) {
+          throw new Error('Invalid response from worksheet data function')
+        }
 
-      return {
-        meta: data.meta,
-        pdfUrl: data.pdfUrl
+        return {
+          meta: data.meta,
+          pdfUrl: data.pdfUrl
+        }
+      } catch (supabaseError) {
+        console.log('Supabase edge function failed, falling back to JSON:', supabaseError)
+        
+        // Fallback to JSON files when Supabase fails
+        const response = await fetch(`/data/${worksheetId}.json`)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch worksheet data from both Supabase and JSON: ${response.status}`)
+        }
+        const jsonData = await response.json()
+        
+        // Determine if this is auto mode or regions mode based on structure
+        let meta: WorksheetMetadata
+        if (jsonData.mode === 'auto' && jsonData.pages) {
+          // This is auto mode metadata
+          meta = jsonData as AutoModeMetadata
+        } else if (jsonData.regions) {
+          // This is regions mode metadata (legacy)
+          meta = jsonData as RegionsModeMetadata
+        } else {
+          throw new Error('Invalid worksheet metadata format')
+        }
+        
+        return {
+          meta,
+          pdfUrl: `/pdfs/${worksheetId}.pdf`
+        }
       }
     },
     enabled: !!worksheetId,
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: (failureCount, error) => {
-      // Don't retry if it's a 404 or if Supabase is not configured
-      if (error.message.includes('404') || !shouldUseSupabase()) {
+      // Don't retry if it's a 404
+      if (error.message.includes('404')) {
         return false
       }
       return failureCount < 3
