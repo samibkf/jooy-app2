@@ -2,11 +2,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import WorksheetViewer from "@/components/WorksheetViewer";
-import AutoModeViewer from "@/components/AutoModeViewer";
 import AIChatButton from "@/components/AIChatButton";
 import { Button } from "@/components/ui/button";
 import { useWorksheetData } from "@/hooks/useWorksheetData";
-import { isAutoModeMetadata, isRegionsModeMetadata } from "@/types/worksheet";
 import type { RegionData } from "@/types/worksheet";
 
 interface StoredRegionData {
@@ -77,12 +75,7 @@ const WorksheetPage: React.FC = () => {
   
   // Load session state when worksheet or page changes
   useEffect(() => {
-    if (!id || !n || !worksheetData) return;
-    
-    // Skip session state loading for Auto Mode
-    if (isAutoModeMetadata(worksheetData.meta)) {
-      return;
-    }
+    if (!id || !n) return;
     
     const sessionKey = `worksheet_page_state_${id}_${n}`;
     console.log('🔍 [DEBUG] Loading session state with key:', sessionKey);
@@ -104,7 +97,7 @@ const WorksheetPage: React.FC = () => {
           console.log('🔍 [DEBUG] Using location state - initialActiveRegion:', locationState.initialActiveRegion);
           setInitialActiveRegion(locationState.initialActiveRegion);
           setInitialCurrentStepIndex(locationState.initialCurrentStepIndex || 0);
-        } else if (parsedState.lastActiveRegionId && isRegionsModeMetadata(worksheetData.meta) && worksheetData.meta.regions) {
+        } else if (parsedState.lastActiveRegionId && worksheetData?.meta?.regions) {
           // Find the last active region from the stored data
           const lastActiveRegion = worksheetData.meta.regions.find(
             region => region.id === parsedState.lastActiveRegionId
@@ -146,11 +139,6 @@ const WorksheetPage: React.FC = () => {
 
   // Memoize the handleRegionStateChange function to prevent unnecessary re-renders
   const handleRegionStateChange = useCallback((region: RegionData | null, stepIndex: number) => {
-    // Skip region state handling for Auto Mode
-    if (worksheetData && isAutoModeMetadata(worksheetData.meta)) {
-      return;
-    }
-    
     console.log('🔍 [DEBUG] handleRegionStateChange called with region:', region?.id, 'stepIndex:', stepIndex);
     
     // Only update state if there's an actual change
@@ -304,45 +292,6 @@ const WorksheetPage: React.FC = () => {
     );
   }
 
-  // Render Auto Mode viewer if metadata indicates auto mode
-  if (isAutoModeMetadata(worksheetData.meta)) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <AutoModeViewer 
-          worksheetId={id} 
-          pageIndex={pageIndex} 
-          worksheetMeta={worksheetData.meta}
-          pdfUrl={worksheetData.pdfUrl}
-          onTextModeChange={setIsTextModeActive}
-        />
-        <AIChatButton 
-          worksheetId={id} 
-          pageNumber={pageIndex} 
-          isTextModeActive={isTextModeActive}
-          activeRegion={null}
-          currentStepIndex={0}
-          pdfUrl={worksheetData.pdfUrl}
-          worksheetMeta={worksheetData.meta}
-        />
-      </div>
-    );
-  }
-
-  // Render Regions Mode viewer for legacy format
-  if (!isRegionsModeMetadata(worksheetData.meta)) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center">
-        <div className="text-center" dir={t('common.language') === 'العربية' ? 'rtl' : 'ltr'}>
-          <h1 className="text-2xl font-bold text-red-500 mb-4">
-            Invalid worksheet format
-          </h1>
-          <Button onClick={goBack} className="bg-gradient-orange-magenta hover:bg-gradient-orange-magenta text-white">
-            {t('worksheet.returnToScanner')}
-          </Button>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="min-h-screen bg-gray-50">
       <WorksheetViewer 

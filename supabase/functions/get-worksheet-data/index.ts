@@ -48,61 +48,22 @@ serve(async (req) => {
       )
     }
 
-    // Check if document has metadata (Auto Mode) or needs regions (Regions Mode)
-    let responseData;
-    
-    if (document.metadata && document.metadata.mode === 'auto') {
-      // Auto Mode: Use metadata from database
-      responseData = {
-        meta: document.metadata,
-        pdfUrl: null // Will be set below
-      }
-    } else {
-      // Regions Mode: Fetch regions from 'document_regions' table
-      const { data: regions, error: regionsError } = await supabase
-        .from('document_regions')
-        .select('*')
-        .eq('document_id', worksheetId)
-        .order('page', { ascending: true })
+    // Fetch regions from 'document_regions' table using document_id
+    const { data: regions, error: regionsError } = await supabase
+      .from('document_regions')
+      .select('*')
+      .eq('document_id', worksheetId)
+      .order('page', { ascending: true })
 
-      if (regionsError) {
-        console.error('Document regions fetch error:', regionsError)
-        return new Response(
-          JSON.stringify({ error: 'Failed to fetch document regions' }),
-          { 
-            status: 500, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        )
-      }
-
-      // DRM protection logic: Only use drm_protected_pages array
-      // The is_private flag is ignored for DRM protection
-      const drmProtectedPages = document.drm_protected_pages || []
-
-      // Transform data to match expected Regions Mode format
-      responseData = {
-        meta: {
-          documentName: document.name,
-          documentId: document.id,
-          drmProtectedPages: drmProtectedPages,
-          regions: regions?.map(region => ({
-            id: region.id,
-            document_id: document.id,
-            user_id: region.user_id,
-            page: region.page,
-            x: region.x,
-            y: region.y,
-            width: region.width,
-            height: region.height,
-            type: region.type,
-            name: region.name,
-            description: region.description || [],
-            created_at: region.created_at
-          })) || []
-        },
-        pdfUrl: null // Will be set below
-      }
+    if (regionsError) {
+      console.error('Document regions fetch error:', regionsError)
+      return new Response(
+        JSON.stringify({ error: 'Failed to fetch document regions' }),
+        { 
+          status: 500, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      )
     }
 
     // Get PDF URL from 'pdfs' storage bucket with 24 hour expiry
@@ -127,8 +88,33 @@ serve(async (req) => {
       )
     }
 
-    // Set the PDF URL
-    responseData.pdfUrl = pdfUrl
+    // DRM protection logic: Only use drm_protected_pages array
+    // The is_private flag is ignored for DRM protection
+    const drmProtectedPages = document.drm_protected_pages || []
+
+    // Transform data to match expected format
+    const responseData = {
+      meta: {
+        documentName: document.name,
+        documentId: document.id,
+        drmProtectedPages: drmProtectedPages,
+        regions: regions?.map(region => ({
+          id: region.id,
+          document_id: document.id,
+          user_id: region.user_id,
+          page: region.page,
+          x: region.x,
+          y: region.y,
+          width: region.width,
+          height: region.height,
+          type: region.type,
+          name: region.name,
+          description: region.description || [],
+          created_at: region.created_at
+        })) || []
+      },
+      pdfUrl
+    }
 
     return new Response(
       JSON.stringify(responseData),
