@@ -6,7 +6,8 @@ import AutoModeViewer from "@/components/AutoModeViewer";
 import AIChatButton from "@/components/AIChatButton";
 import { Button } from "@/components/ui/button";
 import { useWorksheetData } from "@/hooks/useWorksheetData";
-import type { RegionData, isAutoModeMetadata, isRegionsModeMetadata } from "@/types/worksheet";
+import { isAutoModeMetadata, isRegionsModeMetadata } from "@/types/worksheet";
+import type { RegionData } from "@/types/worksheet";
 
 interface StoredRegionData {
   currentStepIndex: number;
