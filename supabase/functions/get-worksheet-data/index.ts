@@ -29,16 +29,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     
-    if (!supabaseUrl || !supabaseKey) {
-      console.error('Missing environment variables:', { supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey })
-      return new Response(
-        JSON.stringify({ error: 'Server configuration error' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
-    }
+    // In Supabase Edge Functions, these environment variables are automatically available
+    // No need to check for them as they are always present
     
     const supabase = createClient(supabaseUrl, supabaseKey)
 
