@@ -37,6 +37,7 @@ const AIChatPage: React.FC = () => {
     currentStepIndex?: number;
     pdfUrl?: string;
     worksheetMeta?: WorksheetMetadata;
+    pageDescription?: string;
   } | null;
   
   const fromTextMode = locationState?.fromTextMode || false;
@@ -44,6 +45,7 @@ const AIChatPage: React.FC = () => {
   const currentStepIndex = locationState?.currentStepIndex || 0;
   const pdfUrl = locationState?.pdfUrl;
   const worksheetMeta = locationState?.worksheetMeta;
+  const pageDescription = locationState?.pageDescription;
   
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -240,8 +242,13 @@ const AIChatPage: React.FC = () => {
         .map(msg => `User: ${msg.content}`)
         .join('\n');
 
+      // Add page description context for auto mode
+      const pageContext = pageDescription 
+        ? `\n\nPage Context: ${pageDescription}\n\n`
+        : '\n\n';
+
       // Create the prompt with enhanced instructions for distinguishing question types
-      const prompt = `Act as a tutor. You must distinguish between two types of student questions:
+      const prompt = `Act as a tutor.${pageContext}You must distinguish between two types of student questions:
 
 1. WORKSHEET QUESTIONS: Questions asking for direct answers to specific worksheet problems, exercises, or tasks shown in the image.
    - For these questions: NEVER give the direct answer. Instead, provide hints, guide the student's thinking process, ask leading questions, or explain the underlying concepts that will help them solve it themselves.
