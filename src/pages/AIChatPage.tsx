@@ -281,6 +281,34 @@ ${conversationHistory}
 Current question: ${userMessage}
 
 Analyze the student's question carefully. If they're asking for a specific worksheet answer, guide them without giving the answer. If they're asking to understand a concept, explain it clearly and directly. Be encouraging and educational in both cases.`;
+      } else {
+        // Use image for manual mode
+        imagePart = {
+          inlineData: {
+            data: pageImage.split(',')[1], // Remove data:image/png;base64, prefix
+            mimeType: "image/png"
+          }
+        };
+        
+        prompt = `Act as a tutor. You must distinguish between two types of student questions:
+
+1. WORKSHEET QUESTIONS: Questions asking for direct answers to specific worksheet problems, exercises, or tasks shown in the image.
+   - For these questions: NEVER give the direct answer. Instead, provide hints, guide the student's thinking process, ask leading questions, or explain the underlying concepts that will help them solve it themselves.
+   - Examples: "What's the answer to question 3?", "Fill in the blank for me", "What should I write here?", "What's the correct word?"
+
+2. CONCEPTUAL QUESTIONS: Questions asking for understanding of general concepts, explanations, or clarification that are NOT asking for specific worksheet answers.
+   - For these questions: Provide clear, direct explanations and help the student understand the concept fully.
+   - Examples: "What is an adjective?", "How do I identify weather patterns?", "Can you explain what this concept means?", "Why does this work this way?"
+
+IMPORTANT: Always respond in the same language as the worksheet content and the user's question.
+
+Previous conversation:
+${conversationHistory}
+
+Current question: ${userMessage}
+
+Analyze the student's question carefully. If they're asking for a specific worksheet answer, guide them without giving the answer. If they're asking to understand a concept, explain it clearly and directly. Be encouraging and educational in both cases.`;
+      }
 
       const contentParts = imagePart ? [prompt, imagePart] : [prompt];
       const result = await model.generateContent(contentParts);
