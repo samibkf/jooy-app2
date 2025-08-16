@@ -382,6 +382,34 @@
   }
 }
 
+/* Auto Mode Styles */
+.auto-mode-container {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.auto-mode-container h2 {
+  background: linear-gradient(135deg, #FF6600 0%, #EE00FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+@media (max-width: 768px) {
+  .auto-mode-container {
+    padding: 1rem;
+    min-height: 50vh;
+  }
+  
+  .auto-mode-container h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+}
+
 /* Virtual Tutor Selection Button Styling */
 .worksheet-container.text-mode .fixed.top-4.left-1\/2 {
   z-index: 70;

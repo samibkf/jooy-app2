@@ -19,8 +19,25 @@ export const useWorksheetData = (worksheetId: string) => {
           throw new Error(`Failed to fetch worksheet data: ${response.status}`)
         }
         const jsonData = await response.json()
+        
+        // Handle legacy format - convert to new format if needed
+        let worksheetMeta;
+        if (jsonData.mode) {
+          // New format with mode
+          worksheetMeta = jsonData;
+        } else {
+          // Legacy format - convert to new format
+          worksheetMeta = {
+            documentName: jsonData.documentName,
+            documentId: jsonData.documentId,
+            drmProtectedPages: jsonData.drmProtectedPages || [],
+            mode: "regions",
+            data: jsonData.regions || []
+          };
+        }
+        
         return {
-          meta: jsonData,
+          meta: worksheetMeta,
           pdfUrl: `/pdfs/${worksheetId}.pdf`
         }
       }

@@ -1,0 +1,38 @@
+{
+  "documentName": "Auto Mode Test Document",
+  "documentId": "AUTOTEST",
+  "drmProtectedPages": [],
+  "mode": "auto",
+  "data": [
+    {
+      "page_number": 1,
+      "page_description": "This is a test page for Auto Mode functionality. It contains various exercises and questions designed to test the AI-powered guidance system.",
+      "guidance": [
+        {
+          "title": "**Introduction to the Exercise**",
+          "description": "Welcome to this interactive learning experience. In this section, we'll guide you through understanding the basic concepts presented on this page."
+        },
+        {
+          "title": "Step 1: Read the Instructions",
+          "description": "Start by carefully reading all the instructions provided on the page.\n\nPay attention to any highlighted text or special formatting.\n\nMake sure you understand what is being asked before proceeding to the next step."
+        },
+        {
+          "title": "Step 2: Analyze the Questions",
+          "description": "Look at each question individually.\n\nIdentify the key concepts being tested.\n\nThink about what knowledge or skills you need to apply to answer correctly."
+        },
+        {
+          "title": "**Practice Section**",
+          "description": "<br>"
+        },
+        {
+          "title": "Step 3: Apply Your Knowledge",
+          "description": "Now it's time to put your understanding into practice.\n\nWork through each problem systematically.\n\nDon't rush - take your time to think through each step.\n\nIf you get stuck, review the previous guidance steps."
+        },
+        {
+          "title": "Step 4: Review Your Answers",
+          "description": "Once you've completed all the questions, take a moment to review your work.\n\nCheck for any obvious errors or omissions.\n\nMake sure your answers make sense in the context of the questions."
+        }
+      ]
+    }
+  ]
+}

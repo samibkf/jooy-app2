@@ -2,13 +2,13 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
-import type { RegionData } from "@/types/worksheet";
+import type { RegionData, GuidanceItem } from "@/types/worksheet";
 
 interface SwitchModeButtonProps {
   worksheetId: string;
   pageNumber: number;
   shouldDisplay: boolean;
-  initialActiveRegion?: RegionData;
+  initialActiveContent?: RegionData | GuidanceItem;
   initialCurrentStepIndex?: number;
 }
 
@@ -16,7 +16,7 @@ const SwitchModeButton: React.FC<SwitchModeButtonProps> = ({
   worksheetId, 
   pageNumber,
   shouldDisplay,
-  initialActiveRegion,
+  initialActiveContent,
   initialCurrentStepIndex = 0
 }) => {
   const navigate = useNavigate();
@@ -26,7 +26,7 @@ const SwitchModeButton: React.FC<SwitchModeButtonProps> = ({
   const handleClick = () => {
     navigate(`/worksheet/${worksheetId}/${pageNumber}`, {
       state: {
-        initialActiveRegion,
+        initialActiveContent,
         initialCurrentStepIndex
       }
     });

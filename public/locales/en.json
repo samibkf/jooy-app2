@@ -13,7 +13,9 @@
     "notFound": "Worksheet not found",
     "invalidPage": "Invalid page number",
     "returnToScanner": "Return to Scanner",
-    "pageInfo": "Page {{current}} of {{total}}"
+    "pageInfo": "Page {{current}} of {{total}}",
+    "guidanceTitle": "Step-by-Step Guidance",
+    "guidancePage": "Page {{current}}"
   },
   "virtualTutor": {
     "selectTitle": "Select Virtual Tutor",

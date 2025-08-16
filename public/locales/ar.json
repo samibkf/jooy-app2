@@ -13,7 +13,9 @@
     "notFound": "ورقة العمل غير موجودة",
     "invalidPage": "رقم صفحة غير صالح",
     "returnToScanner": "العودة إلى الماسح الضوئي",
-    "pageInfo": "صفحة {{current}} من {{total}}"
+    "pageInfo": "صفحة {{current}} من {{total}}",
+    "guidanceTitle": "إرشادات خطوة بخطوة",
+    "guidancePage": "صفحة {{current}}"
   },
   "virtualTutor": {
     "selectTitle": "اختر المعلم الافتراضي",

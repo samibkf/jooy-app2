@@ -49,21 +49,29 @@ serve(async (req) => {
     }
 
     // Fetch regions from 'document_regions' table using document_id
-    const { data: regions, error: regionsError } = await supabase
-      .from('document_regions')
-      .select('*')
-      .eq('document_id', worksheetId)
-      .order('page', { ascending: true })
+    let regions = null;
+    let metadata = document.metadata || null;
+    
+    // If metadata doesn't exist or doesn't have mode, fetch regions (legacy mode)
+    if (!metadata || !metadata.mode) {
+      const { data: regionsData, error: regionsError } = await supabase
+        .from('document_regions')
+        .select('*')
+        .eq('document_id', worksheetId)
+        .order('page', { ascending: true })
 
-    if (regionsError) {
-      console.error('Document regions fetch error:', regionsError)
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch document regions' }),
-        { 
-          status: 500, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      )
+      if (regionsError) {
+        console.error('Document regions fetch error:', regionsError)
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch document regions' }),
+          { 
+            status: 500, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+      
+      regions = regionsData;
     }
 
     // Get PDF URL from 'pdfs' storage bucket with 24 hour expiry
@@ -91,6 +99,32 @@ serve(async (req) => {
     // DRM protection logic: Only use drm_protected_pages array
     // The is_private flag is ignored for DRM protection
     const drmProtectedPages = document.drm_protected_pages || []
+    
+    // Determine the mode and data structure
+    let mode = "regions";
+    let data = [];
+    
+    if (metadata && metadata.mode === "auto") {
+      mode = "auto";
+      data = metadata.data || [];
+    } else {
+      // Legacy regions mode
+      mode = "regions";
+      data = regions?.map(region => ({
+        id: region.id,
+        document_id: document.id,
+        user_id: region.user_id,
+        page: region.page,
+        x: region.x,
+        y: region.y,
+        width: region.width,
+        height: region.height,
+        type: region.type,
+        name: region.name,
+        description: region.description || [],
+        created_at: region.created_at
+      })) || [];
+    }
 
     // Transform data to match expected format
     const responseData = {
@@ -98,20 +132,8 @@ serve(async (req) => {
         documentName: document.name,
         documentId: document.id,
         drmProtectedPages: drmProtectedPages,
-        regions: regions?.map(region => ({
-          id: region.id,
-          document_id: document.id,
-          user_id: region.user_id,
-          page: region.page,
-          x: region.x,
-          y: region.y,
-          width: region.width,
-          height: region.height,
-          type: region.type,
-          name: region.name,
-          description: region.description || [],
-          created_at: region.created_at
-        })) || []
+        mode: mode,
+        data: data
       },
       pdfUrl
     }

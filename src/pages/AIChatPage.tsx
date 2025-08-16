@@ -14,7 +14,7 @@ import { ChevronLeft, Send, Loader2, User, Bot } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { getTextDirection } from "@/lib/textDirection";
 import SwitchModeButton from "@/components/SwitchModeButton";
-import type { RegionData, WorksheetMetadata } from "@/types/worksheet";
+import type { RegionData, GuidanceItem, WorksheetMetadata, AutoModePageData } from "@/types/worksheet";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -33,14 +33,14 @@ const AIChatPage: React.FC = () => {
   // Get the state passed during navigation
   const locationState = location.state as { 
     fromTextMode?: boolean;
-    activeRegion?: RegionData;
+    activeContent?: RegionData | GuidanceItem;
     currentStepIndex?: number;
     pdfUrl?: string;
     worksheetMeta?: WorksheetMetadata;
   } | null;
   
   const fromTextMode = locationState?.fromTextMode || false;
-  const activeRegion = locationState?.activeRegion;
+  const activeContent = locationState?.activeContent;
   const currentStepIndex = locationState?.currentStepIndex || 0;
   const pdfUrl = locationState?.pdfUrl;
   const worksheetMeta = locationState?.worksheetMeta;
@@ -50,6 +50,7 @@ const AIChatPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [pageImage, setPageImage] = useState<string | null>(null);
   const [isGeneratingImage, setIsGeneratingImage] = useState(true);
+  const [usePageDescription, setUsePageDescription] = useState(false);
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -126,6 +127,18 @@ const AIChatPage: React.FC = () => {
 
   // Load cached page image or generate new one
   useEffect(() => {
+    // Check if we should use page description instead of image
+    if (worksheetMeta?.mode === "auto") {
+      const pageData = (worksheetMeta.data as AutoModePageData[]).find(
+        page => page.page_number === parseInt(pageNumber)
+      );
+      if (pageData?.page_description) {
+        setUsePageDescription(true);
+        setIsGeneratingImage(false);
+        return;
+      }
+    }
+    
     if (!pdfUrl || !pageNumber || !worksheetId) {
       setIsGeneratingImage(false);
       toast({
@@ -240,8 +253,17 @@ const AIChatPage: React.FC = () => {
         .map(msg => `User: ${msg.content}`)
         .join('\n');
 
-      // Create the prompt with enhanced instructions for distinguishing question types
-      const prompt = `Act as a tutor. You must distinguish between two types of student questions:
+      let prompt = '';
+      let imagePart = null;
+      
+      if (usePageDescription && worksheetMeta?.mode === "auto") {
+        // Use page description for auto mode
+        const pageData = (worksheetMeta.data as AutoModePageData[]).find(
+          page => page.page_number === parseInt(pageNumber)
+        );
+        const pageDescription = pageData?.page_description || '';
+        
+        prompt = `Act as a tutor. You must distinguish between two types of student questions:
 
 1. WORKSHEET QUESTIONS: Questions asking for direct answers to specific worksheet problems, exercises, or tasks shown in the image.
    - For these questions: NEVER give the direct answer. Instead, provide hints, guide the student's thinking process, ask leading questions, or explain the underlying concepts that will help them solve it themselves.
@@ -260,17 +282,8 @@ Current question: ${userMessage}
 
 Analyze the student's question carefully. If they're asking for a specific worksheet answer, guide them without giving the answer. If they're asking to understand a concept, explain it clearly and directly. Be encouraging and educational in both cases.`;
 
-      // Convert base64 image to the format expected by Gemini
-      const base64Data = pageImage.split(',')[1]; // Remove data:image/png;base64, prefix
-      
-      const imagePart = {
-        inlineData: {
-          data: base64Data,
-          mimeType: "image/png"
-        }
-      };
-
-      const result = await model.generateContent([prompt, imagePart]);
+      const contentParts = imagePart ? [prompt, imagePart] : [prompt];
+      const result = await model.generateContent(contentParts);
       const response = await result.response;
       const aiResponse = response.text();
 
@@ -480,7 +493,7 @@ Analyze the student's question carefully. If they're asking for a specific works
       </div>
 
       {/* Hidden PDF rendering for image generation - only render if no cached image */}
-      {!pageImage && (
+      {!pageImage && !usePageDescription && (
         <div className="hidden">
           {pdfUrl && (
             <Document file={pdfUrl}>
@@ -502,7 +515,7 @@ Analyze the student's question carefully. If they're asking for a specific works
           worksheetId={worksheetId!} 
           pageNumber={parseInt(pageNumber!)} 
           shouldDisplay={true}
-          initialActiveRegion={activeRegion}
+          initialActiveContent={activeContent}
           initialCurrentStepIndex={currentStepIndex}
         />
       )}

@@ -5,15 +5,15 @@ import WorksheetViewer from "@/components/WorksheetViewer";
 import AIChatButton from "@/components/AIChatButton";
 import { Button } from "@/components/ui/button";
 import { useWorksheetData } from "@/hooks/useWorksheetData";
-import type { RegionData } from "@/types/worksheet";
+import type { RegionData, GuidanceItem } from "@/types/worksheet";
 
-interface StoredRegionData {
+interface StoredContentData {
   currentStepIndex: number;
 }
 
 interface SessionPageData {
-  lastActiveRegionId: string | null;
-  regions: Record<string, StoredRegionData>;
+  lastActiveContentId: string | null;
+  content: Record<string, StoredContentData>;
 }
 
 const WorksheetPage: React.FC = () => {
@@ -23,15 +23,15 @@ const WorksheetPage: React.FC = () => {
   const location = useLocation();
   
   const [isTextModeActive, setIsTextModeActive] = useState(false);
-  const [currentActiveRegion, setCurrentActiveRegion] = useState<RegionData | null>(null);
+  const [currentActiveContent, setCurrentActiveContent] = useState<RegionData | GuidanceItem | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
-  const [allRegionsState, setAllRegionsState] = useState<Record<string, StoredRegionData>>({});
-  const [initialActiveRegion, setInitialActiveRegion] = useState<RegionData | null>(null);
+  const [allContentState, setAllContentState] = useState<Record<string, StoredContentData>>({});
+  const [initialActiveContent, setInitialActiveContent] = useState<RegionData | GuidanceItem | null>(null);
   const [initialCurrentStepIndex, setInitialCurrentStepIndex] = useState<number>(0);
   
   // Get initial state from navigation (when returning from AI chat)
   const locationState = location.state as { 
-    initialActiveRegion?: RegionData; 
+    initialActiveContent?: RegionData | GuidanceItem; 
     initialCurrentStepIndex?: number; 
   } | null;
   
@@ -89,45 +89,60 @@ const WorksheetPage: React.FC = () => {
         console.log('🔍 [DEBUG] Parsed session state:', parsedState);
         
         // Set all regions state
-        setAllRegionsState(parsedState.regions || {});
-        console.log('🔍 [DEBUG] Set allRegionsState to:', parsedState.regions || {});
+        setAllContentState(parsedState.content || {});
+        console.log('🔍 [DEBUG] Set allContentState to:', parsedState.content || {});
         
         // If we have location state (from AI chat), prioritize that
-        if (locationState?.initialActiveRegion) {
-          console.log('🔍 [DEBUG] Using location state - initialActiveRegion:', locationState.initialActiveRegion);
-          setInitialActiveRegion(locationState.initialActiveRegion);
+        if (locationState?.initialActiveContent) {
+          console.log('🔍 [DEBUG] Using location state - initialActiveContent:', locationState.initialActiveContent);
+          setInitialActiveContent(locationState.initialActiveContent);
           setInitialCurrentStepIndex(locationState.initialCurrentStepIndex || 0);
-        } else if (parsedState.lastActiveRegionId && worksheetData?.meta?.regions) {
-          // Find the last active region from the stored data
-          const lastActiveRegion = worksheetData.meta.regions.find(
-            region => region.id === parsedState.lastActiveRegionId
-          );
-          if (lastActiveRegion) {
-            const regionState = parsedState.regions[parsedState.lastActiveRegionId];
-            console.log('🔍 [DEBUG] Found last active region:', lastActiveRegion.id, 'with state:', regionState);
-            setInitialActiveRegion(lastActiveRegion);
-            setInitialCurrentStepIndex(regionState?.currentStepIndex || 0);
+        } else if (parsedState.lastActiveContentId && worksheetData?.meta?.data) {
+          // Find the last active content from the stored data
+          let lastActiveContent = null;
+          
+          if (worksheetData.meta.mode === "regions") {
+            lastActiveContent = (worksheetData.meta.data as RegionData[]).find(
+              region => region.id === parsedState.lastActiveContentId
+            );
+          } else if (worksheetData.meta.mode === "auto") {
+            // For auto mode, find guidance item by constructing ID
+            const pageData = (worksheetData.meta.data as any[]).find(page => page.page_number === parseInt(n));
+            if (pageData) {
+              const guidanceIndex = parseInt(parsedState.lastActiveContentId.split('_')[1]);
+              lastActiveContent = pageData.guidance[guidanceIndex];
+              if (lastActiveContent) {
+                (lastActiveContent as any).id = parsedState.lastActiveContentId;
+              }
+            }
+          }
+          
+          if (lastActiveContent) {
+            const contentState = parsedState.content[parsedState.lastActiveContentId];
+            console.log('🔍 [DEBUG] Found last active content:', parsedState.lastActiveContentId, 'with state:', contentState);
+            setInitialActiveContent(lastActiveContent);
+            setInitialCurrentStepIndex(contentState?.currentStepIndex || 0);
           }
         }
       } else {
         console.log('🔍 [DEBUG] No session state found for key:', sessionKey);
-        setAllRegionsState({});
+        setAllContentState({});
         
         // Use location state if available
-        if (locationState?.initialActiveRegion) {
-          console.log('🔍 [DEBUG] Using location state (no session) - initialActiveRegion:', locationState.initialActiveRegion);
-          setInitialActiveRegion(locationState.initialActiveRegion);
+        if (locationState?.initialActiveContent) {
+          console.log('🔍 [DEBUG] Using location state (no session) - initialActiveContent:', locationState.initialActiveContent);
+          setInitialActiveContent(locationState.initialActiveContent);
           setInitialCurrentStepIndex(locationState.initialCurrentStepIndex || 0);
         }
       }
     } catch (error) {
       console.warn('🔍 [DEBUG] Failed to load session state:', error);
-      setAllRegionsState({});
+      setAllContentState({});
       
       // Use location state if available
-      if (locationState?.initialActiveRegion) {
-        console.log('🔍 [DEBUG] Using location state (error fallback) - initialActiveRegion:', locationState.initialActiveRegion);
-        setInitialActiveRegion(locationState.initialActiveRegion);
+      if (locationState?.initialActiveContent) {
+        console.log('🔍 [DEBUG] Using location state (error fallback) - initialActiveContent:', locationState.initialActiveContent);
+        setInitialActiveContent(locationState.initialActiveContent);
         setInitialCurrentStepIndex(locationState.initialCurrentStepIndex || 0);
       }
     }
@@ -138,16 +153,18 @@ const WorksheetPage: React.FC = () => {
   };
 
   // Memoize the handleRegionStateChange function to prevent unnecessary re-renders
-  const handleRegionStateChange = useCallback((region: RegionData | null, stepIndex: number) => {
-    console.log('🔍 [DEBUG] handleRegionStateChange called with region:', region?.id, 'stepIndex:', stepIndex);
+  const handleContentStateChange = useCallback((content: RegionData | GuidanceItem | null, stepIndex: number) => {
+    const contentId = content ? ((content as any).id || `guidance_${(content as any).index}`) : null;
+    console.log('🔍 [DEBUG] handleContentStateChange called with content:', contentId, 'stepIndex:', stepIndex);
     
     // Only update state if there's an actual change
-    setCurrentActiveRegion(prevRegion => {
-      const regionChanged = prevRegion?.id !== region?.id;
-      if (regionChanged) {
-        console.log('🔍 [DEBUG] Region changed from', prevRegion?.id, 'to', region?.id);
+    setCurrentActiveContent(prevContent => {
+      const prevId = prevContent ? ((prevContent as any).id || `guidance_${(prevContent as any).index}`) : null;
+      const contentChanged = prevId !== contentId;
+      if (contentChanged) {
+        console.log('🔍 [DEBUG] Content changed from', prevId, 'to', contentId);
       }
-      return regionChanged ? region : prevRegion;
+      return contentChanged ? content : prevContent;
     });
     
     setCurrentStepIndex(prevStepIndex => {
@@ -158,28 +175,28 @@ const WorksheetPage: React.FC = () => {
       return stepChanged ? stepIndex : prevStepIndex;
     });
     
-    // Update all regions state and save to session storage
+    // Update all content state and save to session storage
     if (id && n) {
       const sessionKey = `worksheet_page_state_${id}_${n}`;
       console.log('🔍 [DEBUG] Using session key for save:', sessionKey);
       
       // Use functional update to ensure we have the latest state
-      setAllRegionsState(currentAllRegionsState => {
-        console.log('🔍 [DEBUG] Current allRegionsState before update:', currentAllRegionsState);
+      setAllContentState(currentAllContentState => {
+        console.log('🔍 [DEBUG] Current allContentState before update:', currentAllContentState);
         
-        if (region) {
-          // Update the state for this specific region
-          const updatedAllRegionsState = {
-            ...currentAllRegionsState,
-            [region.id]: {
+        if (content) {
+          // Update the state for this specific content
+          const updatedAllContentState = {
+            ...currentAllContentState,
+            [contentId]: {
               currentStepIndex: stepIndex
             }
           };
-          console.log('🔍 [DEBUG] Updated region state for:', region.id, 'with stepIndex:', stepIndex);
+          console.log('🔍 [DEBUG] Updated content state for:', contentId, 'with stepIndex:', stepIndex);
           
           const stateToSave: SessionPageData = {
-            lastActiveRegionId: region.id,
-            regions: updatedAllRegionsState
+            lastActiveContentId: contentId,
+            content: updatedAllContentState
           };
           
           console.log('🔍 [DEBUG] About to save state to sessionStorage:', stateToSave);
@@ -195,10 +212,10 @@ const WorksheetPage: React.FC = () => {
             console.warn('🔍 [DEBUG] Failed to save page state to session:', error);
           }
           
-          console.log('🔍 [DEBUG] Returning updated allRegionsState:', updatedAllRegionsState);
-          return updatedAllRegionsState;
+          console.log('🔍 [DEBUG] Returning updated allContentState:', updatedAllContentState);
+          return updatedAllContentState;
         } else {
-          // When no active region, check if we need to update sessionStorage
+          // When no active content, check if we need to update sessionStorage
           try {
             const currentStoredState = sessionStorage.getItem(sessionKey);
             let currentSessionData: SessionPageData | null = null;
@@ -207,31 +224,31 @@ const WorksheetPage: React.FC = () => {
               currentSessionData = JSON.parse(currentStoredState);
             }
             
-            // Only update sessionStorage if lastActiveRegionId is not already null
-            if (currentSessionData?.lastActiveRegionId !== null) {
+            // Only update sessionStorage if lastActiveContentId is not already null
+            if (currentSessionData?.lastActiveContentId !== null) {
               const stateToSave: SessionPageData = {
-                lastActiveRegionId: null,
-                regions: currentAllRegionsState
+                lastActiveContentId: null,
+                content: currentAllContentState
               };
               
-              console.log('🔍 [DEBUG] About to save state (no active region) to sessionStorage:', stateToSave);
+              console.log('🔍 [DEBUG] About to save state (no active content) to sessionStorage:', stateToSave);
               
               sessionStorage.setItem(sessionKey, JSON.stringify(stateToSave));
-              console.log('🔍 [DEBUG] Successfully updated last active region in session with key:', sessionKey);
+              console.log('🔍 [DEBUG] Successfully updated last active content in session with key:', sessionKey);
               
               // Verify the save by immediately reading it back
               const verifyState = sessionStorage.getItem(sessionKey);
               console.log('🔍 [DEBUG] Verification - state read back from sessionStorage:', verifyState);
             } else {
-              console.log('🔍 [DEBUG] No sessionStorage update needed - lastActiveRegionId already null');
+              console.log('🔍 [DEBUG] No sessionStorage update needed - lastActiveContentId already null');
             }
           } catch (error) {
             console.warn('🔍 [DEBUG] Failed to update session state:', error);
           }
           
-          console.log('🔍 [DEBUG] Returning unchanged allRegionsState:', currentAllRegionsState);
+          console.log('🔍 [DEBUG] Returning unchanged allContentState:', currentAllContentState);
           // Return the same object reference to prevent unnecessary re-renders
-          return currentAllRegionsState;
+          return currentAllContentState;
         }
       });
     }
@@ -300,16 +317,16 @@ const WorksheetPage: React.FC = () => {
         worksheetMeta={worksheetData.meta}
         pdfUrl={worksheetData.pdfUrl}
         onTextModeChange={setIsTextModeActive}
-        initialActiveRegion={initialActiveRegion}
+        initialActiveContent={initialActiveContent}
         initialCurrentStepIndex={initialCurrentStepIndex}
-        onRegionStateChange={handleRegionStateChange}
-        allRegionsState={allRegionsState}
+        onContentStateChange={handleContentStateChange}
+        allContentState={allContentState}
       />
       <AIChatButton 
         worksheetId={id} 
         pageNumber={pageIndex} 
         isTextModeActive={isTextModeActive}
-        activeRegion={currentActiveRegion}
+        activeContent={currentActiveContent}
         currentStepIndex={currentStepIndex}
         pdfUrl={worksheetData.pdfUrl}
         worksheetMeta={worksheetData.meta}

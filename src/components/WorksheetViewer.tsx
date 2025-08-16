@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, Sparkles, UserRound } from "lucide-react";
 import { getTextDirection } from "@/lib/textDirection";
 import VirtualTutorSelectionModal from "./VirtualTutorSelectionModal";
-import type { WorksheetMetadata, RegionData } from "@/types/worksheet";
+import type { WorksheetMetadata, RegionData, GuidanceItem, AutoModePageData } from "@/types/worksheet";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
-interface StoredRegionData {
+interface StoredContentData {
   currentStepIndex: number;
 }
 
@@ -21,10 +21,10 @@ interface WorksheetViewerProps {
   worksheetMeta: WorksheetMetadata;
   pdfUrl: string;
   onTextModeChange?: (isTextMode: boolean) => void;
-  initialActiveRegion?: RegionData | null;
+  initialActiveContent?: RegionData | GuidanceItem | null;
   initialCurrentStepIndex?: number;
-  onRegionStateChange?: (region: RegionData | null, stepIndex: number) => void;
-  allRegionsState?: Record<string, StoredRegionData>;
+  onContentStateChange?: (content: RegionData | GuidanceItem | null, stepIndex: number) => void;
+  allContentState?: Record<string, StoredContentData>;
 }
 
 const WorksheetViewer: React.FC<WorksheetViewerProps> = ({ 
@@ -33,10 +33,10 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
   worksheetMeta,
   pdfUrl,
   onTextModeChange,
-  initialActiveRegion,
+  initialActiveContent,
   initialCurrentStepIndex = 0,
-  onRegionStateChange,
-  allRegionsState = {}
+  onContentStateChange,
+  allContentState = {}
 }) => {
   const { t } = useTranslation();
   const [numPages, setNumPages] = useState<number | null>(null);
@@ -45,10 +45,11 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
   const [scaleFactor, setScaleFactor] = useState(1);
   const [pdfPosition, setPdfPosition] = useState({ top: 0, left: 0 });
   
-  const [activeRegion, setActiveRegion] = useState<RegionData | null>(null);
+  const [activeContent, setActiveContent] = useState<RegionData | GuidanceItem | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   
   const [isTextMode, setIsTextMode] = useState<boolean>(false);
+  const [isGuidanceTextMode, setIsGuidanceTextMode] = useState<boolean>(false);
   
   const [displayedMessages, setDisplayedMessages] = useState<string[]>([]);
   
@@ -78,12 +79,119 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const textDisplayRef = useRef<HTMLDivElement>(null);
 
-  // Filter regions for current page and ensure description is properly split into paragraphs
+  // Get content for current page based on mode
+  const currentPageContent = useMemo(() => {
+    if (!worksheetMeta?.data) return [];
+    
+    if (worksheetMeta.mode === "regions") {
+      // Filter regions for current page and ensure description is properly split into paragraphs
+      return (worksheetMeta.data as RegionData[])
+        .filter((region: RegionData) => region.page === pageIndex)
+        .map((region: RegionData) => {
+          let processedDescription: string[] = [];
+          
+          if (Array.isArray(region.description)) {
+            // If it's already an array, process each item to split by newlines
+            processedDescription = region.description.flatMap(item => 
+              typeof item === 'string' 
+                ? item.split('\n').filter(paragraph => paragraph.trim() !== '')
+                : []
+            );
+          } else if (typeof region.description === 'string') {
+            // If it's a string, split by newlines
+            processedDescription = region.description
+              .split('\n')
+              .filter(paragraph => paragraph.trim() !== '');
+          }
+          
+          return {
+            ...region,
+            description: processedDescription
+          };
+        });
+    } else if (worksheetMeta.mode === "auto") {
+      // Get guidance items for current page
+      const pageData = (worksheetMeta.data as AutoModePageData[]).find(
+        page => page.page_number === pageIndex
+      );
+      return pageData ? pageData.guidance.map((guidance, index) => ({
+        ...guidance,
+        id: `guidance_${index}`,
+        index: index
+      })) : [];
+    }
+    
+    return [];
+  }, [worksheetMeta, pageIndex]);
+
+  // Legacy regions for backward compatibility
   const regions = useMemo(() => {
-    if (!worksheetMeta?.regions) return [];
-    return worksheetMeta.regions
-      .filter((region: RegionData) => region.page === pageIndex)
-      .map((region: RegionData) => {
+    if (worksheetMeta?.mode === "regions") {
+      return currentPageContent as RegionData[];
+    }
+    return [];
+  }, [worksheetMeta, currentPageContent]);
+
+  // Guidance items for auto mode
+  const guidanceItems = useMemo(() => {
+    if (worksheetMeta?.mode === "auto") {
+      return currentPageContent as (GuidanceItem & { id: string; index: number })[];
+    }
+    return [];
+  }, [worksheetMeta, currentPageContent]);
+
+  // Helper function to clean title text (remove ** markers)
+  const cleanTitle = (title: string): string => {
+    return title.replace(/\*\*/g, '');
+  };
+
+  // Helper function to check if guidance item should be non-clickable
+  const isNonClickableGuidance = (guidance: GuidanceItem): boolean => {
+    return !guidance.description || 
+           guidance.description.trim() === '' || 
+           guidance.description.trim() === '<br>';
+  };
+
+  // Helper function to format guidance items for display
+  const formatGuidanceForDisplay = (guidance: GuidanceItem) => {
+    const cleanedTitle = cleanTitle(guidance.title);
+    const isNonClickable = isNonClickableGuidance(guidance);
+    
+    return {
+      title: cleanedTitle,
+      isNonClickable,
+      originalGuidance: guidance
+    };
+  };
+
+  // Process guidance description into paragraphs
+  const processGuidanceDescription = (description: string): string[] => {
+    if (!description || description.trim() === '' || description.trim() === '<br>') {
+      return [];
+    }
+    
+    return description
+      .split('\n')
+      .filter(paragraph => paragraph.trim() !== '');
+  };
+
+  // Get current page description for auto mode (for AI chat context)
+  const currentPageDescription = useMemo(() => {
+    if (worksheetMeta?.mode === "auto") {
+      const pageData = (worksheetMeta.data as AutoModePageData[]).find(
+        page => page.page_number === pageIndex
+      );
+      return pageData?.page_description || '';
+    }
+    return '';
+  }, [worksheetMeta, pageIndex]);
+
+  // Legacy region processing (keeping for backward compatibility)
+  const legacyRegions = useMemo(() => {
+    if (worksheetMeta?.mode === "regions" && worksheetMeta.data) {
+      return (worksheetMeta.data as RegionData[])
+        .filter((region: RegionData) => region.page === pageIndex)
+        .map((region: RegionData) => {
         let processedDescription: string[] = [];
         
         if (Array.isArray(region.description)) {
@@ -105,6 +213,8 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
           description: processedDescription
         };
       });
+    }
+    return [];
   }, [worksheetMeta, pageIndex]);
 
   // Check if current page is DRM protected
@@ -124,10 +234,11 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
     
     if (worksheetChanged || pageChanged) {
       // Reset all state to defaults
-      setActiveRegion(null);
+      setActiveContent(null);
       setCurrentStepIndex(0);
       setDisplayedMessages([]);
       setIsTextMode(false);
+      setIsGuidanceTextMode(false);
       setIsAudioPlaying(false);
       setAudioCheckPerformed(false);
       setHasRestoredInitialState(false);
@@ -155,17 +266,31 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
 
   // Apply initial state restoration (only once when initialActiveRegion is provided and not yet restored)
   useEffect(() => {
-    if (initialActiveRegion && regions.length > 0 && !hasRestoredInitialState) {
-      // Find the matching region in the current regions
-      const matchingRegion = regions.find(region => region.id === initialActiveRegion.id);
-      if (matchingRegion) {
-        setActiveRegion(matchingRegion);
+    if (initialActiveContent && currentPageContent.length > 0 && !hasRestoredInitialState) {
+      // Find the matching content in the current page content
+      const contentId = (initialActiveContent as any).id;
+      const matchingContent = currentPageContent.find(content => (content as any).id === contentId);
+      
+      if (matchingContent) {
+        setActiveContent(matchingContent);
         setCurrentStepIndex(initialCurrentStepIndex);
         setIsTextMode(true);
         
+        // Set guidance text mode for auto mode
+        if (worksheetMeta?.mode === "auto") {
+          setIsGuidanceTextMode(true);
+        }
+        
         // Restore displayed messages up to the current step
-        if (matchingRegion.description && matchingRegion.description.length > 0) {
-          const messagesToDisplay = matchingRegion.description.slice(0, initialCurrentStepIndex + 1);
+        let description: string[] = [];
+        if (worksheetMeta?.mode === "regions") {
+          description = (matchingContent as RegionData).description || [];
+        } else if (worksheetMeta?.mode === "auto") {
+          description = processGuidanceDescription((matchingContent as GuidanceItem).description);
+        }
+        
+        if (description.length > 0) {
+          const messagesToDisplay = description.slice(0, initialCurrentStepIndex + 1);
           setDisplayedMessages(messagesToDisplay);
           
           // Notify parent about text mode change
@@ -187,7 +312,11 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
           // Play audio for current step if available
           if (audioAvailable) {
             setTimeout(() => {
-              playAudioSegment(matchingRegion.name, initialCurrentStepIndex);
+              if (worksheetMeta?.mode === "regions") {
+                playAudioSegment((matchingContent as RegionData).name, initialCurrentStepIndex);
+              } else if (worksheetMeta?.mode === "auto") {
+                playAudioSegment(`${pageIndex}_${(matchingContent as any).index}`, initialCurrentStepIndex);
+              }
             }, 500);
           }
         }
@@ -196,19 +325,28 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
         setHasRestoredInitialState(true);
       }
     }
-  }, [initialActiveRegion, initialCurrentStepIndex, regions, hasRestoredInitialState, onTextModeChange, audioAvailable]);
+  }, [initialActiveContent, initialCurrentStepIndex, currentPageContent, hasRestoredInitialState, onTextModeChange, audioAvailable, worksheetMeta, pageIndex]);
 
   // Initial audio availability check - performed once when worksheet/page loads
   useEffect(() => {
-    if (!audioCheckPerformed && regions.length > 0) {
-      const firstRegion = regions[0];
-      if (!firstRegion || !firstRegion.name) {
+    if (!audioCheckPerformed && currentPageContent.length > 0) {
+      let audioPath = '';
+      
+      if (worksheetMeta?.mode === "regions") {
+        const firstRegion = currentPageContent[0] as RegionData;
+        if (!firstRegion || !firstRegion.name) {
+          setAudioAvailable(false);
+          setAudioCheckPerformed(true);
+          return;
+        }
+        audioPath = `/audio/${worksheetId}/${firstRegion.name}_1.mp3`;
+      } else if (worksheetMeta?.mode === "auto") {
+        audioPath = `/audio/${worksheetId}/${pageIndex}_0_1.mp3`;
+      } else {
         setAudioAvailable(false);
         setAudioCheckPerformed(true);
         return;
       }
-      
-      const audioPath = `/audio/${worksheetId}/${firstRegion.name}_1.mp3`;
       
       // Create a temporary audio object for testing
       const testAudio = new Audio();
@@ -257,23 +395,27 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
         }
       };
     }
-  }, [worksheetId, pageIndex, regions, audioCheckPerformed]);
+  }, [worksheetId, pageIndex, currentPageContent, audioCheckPerformed, worksheetMeta]);
 
   // Notify parent when region state changes
   useEffect(() => {
-    if (onRegionStateChange) {
-      onRegionStateChange(activeRegion, currentStepIndex);
+    if (onContentStateChange) {
+      onContentStateChange(activeContent, currentStepIndex);
     }
-  }, [activeRegion, currentStepIndex, onRegionStateChange]);
+  }, [activeContent, currentStepIndex, onContentStateChange]);
 
   const handleMessageClick = (index: number) => {
-    if (!activeRegion || !audioAvailable) return;
+    if (!activeContent || !audioAvailable) return;
     
     if (audioRef.current) {
       audioRef.current.pause();
     }
     
-    playAudioSegment(activeRegion.name, index);
+    if (worksheetMeta?.mode === "regions") {
+      playAudioSegment((activeContent as RegionData).name, index);
+    } else if (worksheetMeta?.mode === "auto") {
+      playAudioSegment(`${pageIndex}_${(activeContent as any).index}`, index);
+    }
     
     const messageElement = document.querySelector(`[data-message-index="${index}"]`);
     if (messageElement) {
@@ -432,25 +574,34 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
     });
   };
   
-  const handleRegionClick = (region: RegionData) => {
-    console.log('🔍 [DEBUG] Region clicked:', region.id);
+  const handleContentClick = (content: RegionData | GuidanceItem) => {
+    const contentId = (content as any).id;
+    console.log('🔍 [DEBUG] Content clicked:', contentId);
     
-    // Check if region has no description or empty description
-    if (!region.description || region.description.length === 0) {
+    // Get description based on content type
+    let description: string[] = [];
+    if (worksheetMeta?.mode === "regions") {
+      description = (content as RegionData).description || [];
+    } else if (worksheetMeta?.mode === "auto") {
+      description = processGuidanceDescription((content as GuidanceItem).description);
+    }
+    
+    // Check if content has no description or empty description
+    if (!description || description.length === 0) {
       return; // Do nothing if no description
     }
     
-    // Check if this region has saved state in allRegionsState
-    const savedRegionState = allRegionsState[region.id];
-    const startingStepIndex = savedRegionState?.currentStepIndex || 0;
+    // Check if this content has saved state
+    const savedContentState = allContentState[contentId];
+    const startingStepIndex = savedContentState?.currentStepIndex || 0;
     
-    console.log(`🔍 [DEBUG] Region ${region.id} clicked. Saved state:`, savedRegionState, `Starting at step: ${startingStepIndex}`);
+    console.log(`🔍 [DEBUG] Content ${contentId} clicked. Saved state:`, savedContentState, `Starting at step: ${startingStepIndex}`);
     
     setCurrentStepIndex(startingStepIndex);
     
-    if (region.description && region.description.length > 0) {
+    if (description.length > 0) {
       // Display messages up to the saved step index
-      const messagesToDisplay = region.description.slice(0, startingStepIndex + 1);
+      const messagesToDisplay = description.slice(0, startingStepIndex + 1);
       setDisplayedMessages(messagesToDisplay);
       
       if (videoRef.current && audioAvailable) {
@@ -466,15 +617,24 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
       // Only try to play audio if it's available (based on initial check)
       if (audioAvailable) {
         setTimeout(() => {
-          playAudioSegment(region.name, startingStepIndex);
+          if (worksheetMeta?.mode === "regions") {
+            playAudioSegment((content as RegionData).name, startingStepIndex);
+          } else if (worksheetMeta?.mode === "auto") {
+            playAudioSegment(`${pageIndex}_${(content as any).index}`, startingStepIndex);
+          }
         }, 500);
       }
     } else {
       setDisplayedMessages([]);
     }
     
-    setActiveRegion(region);
+    setActiveContent(content);
     setIsTextMode(true);
+    
+    // Set guidance text mode for auto mode
+    if (worksheetMeta?.mode === "auto") {
+      setIsGuidanceTextMode(true);
+    }
     
     // Notify parent about text mode change
     if (onTextModeChange) {
@@ -483,53 +643,113 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
   };
   
   const handleNextStep = () => {
-    if (activeRegion && activeRegion.description && currentStepIndex < activeRegion.description.length - 1) {
+    if (!activeContent) return;
+    
+    // Get description based on content type
+    let description: string[] = [];
+    if (worksheetMeta?.mode === "regions") {
+      description = (activeContent as RegionData).description || [];
+    } else if (worksheetMeta?.mode === "auto") {
+      description = processGuidanceDescription((activeContent as GuidanceItem).description);
+    }
+    
+    if (description && currentStepIndex < description.length - 1) {
       if (audioRef.current) {
         audioRef.current.pause();
       }
       
       const nextStepIndex = currentStepIndex + 1;
-      console.log('🔍 [DEBUG] Advancing to next step:', nextStepIndex, 'for region:', activeRegion.id);
+      const contentId = (activeContent as any).id;
+      console.log('🔍 [DEBUG] Advancing to next step:', nextStepIndex, 'for content:', contentId);
       
       setCurrentStepIndex(nextStepIndex);
       
       setDisplayedMessages(prevMessages => [
         ...prevMessages,
-        activeRegion.description[nextStepIndex]
+        description[nextStepIndex]
       ]);
       
       // Only try to play audio if it's available (based on initial check)
       if (audioAvailable) {
         setTimeout(() => {
-          playAudioSegment(activeRegion.name, nextStepIndex);
+          if (worksheetMeta?.mode === "regions") {
+            playAudioSegment((activeContent as RegionData).name, nextStepIndex);
+          } else if (worksheetMeta?.mode === "auto") {
+            playAudioSegment(`${pageIndex}_${(activeContent as any).index}`, nextStepIndex);
+          }
         }, 500);
       }
     }
   };
   
   const handleBackButtonClick = () => {
-    setIsTextMode(false);
-    
-    // Notify parent about text mode change
-    if (onTextModeChange) {
-      onTextModeChange(false);
+    if (worksheetMeta?.mode === "auto" && isGuidanceTextMode) {
+      // In auto mode, first go back to guidance list
+      setIsGuidanceTextMode(false);
+      setDisplayedMessages([]);
+      
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
+      
+      setIsAudioPlaying(false);
+    } else {
+      // Exit text mode completely
+      setIsTextMode(false);
+      setIsGuidanceTextMode(false);
+      
+      // Notify parent about text mode change
+      if (onTextModeChange) {
+        onTextModeChange(false);
+      }
+      
+      // Clear the active content and reset state when manually exiting text mode
+      setActiveContent(null);
+      setCurrentStepIndex(0);
+      setDisplayedMessages([]);
+      
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+      }
+      
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
+      
+      setIsAudioPlaying(false);
+    }
+  };
+
+  const handleGuidanceClick = (guidance: GuidanceItem & { id: string; index: number }) => {
+    // Check if this guidance item is clickable
+    if (isNonClickableGuidance(guidance)) {
+      return;
     }
     
-    // Clear the active region and reset state when manually exiting text mode
-    setActiveRegion(null);
-    setCurrentStepIndex(0);
-    setDisplayedMessages([]);
+    handleContentClick(guidance);
+  };
+
+  const handleRegionClick = (region: RegionData) => {
+    handleContentClick(region);
+  };
+
+  // Helper function to get current description for next step check
+  const getCurrentDescription = (): string[] => {
+    if (!activeContent) return [];
     
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
+    if (worksheetMeta?.mode === "regions") {
+      return (activeContent as RegionData).description || [];
+    } else if (worksheetMeta?.mode === "auto") {
+      return processGuidanceDescription((activeContent as GuidanceItem).description);
     }
     
-    if (videoRef.current) {
-      videoRef.current.pause();
-    }
-    
-    setIsAudioPlaying(false);
+    return [];
   };
 
   const handleTutorSelected = (videoUrl: string) => {
@@ -556,7 +776,8 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
     e.preventDefault();
   };
   
-  const hasNextStep = activeRegion?.description && currentStepIndex < activeRegion.description.length - 1;
+  const currentDescription = getCurrentDescription();
+  const hasNextStep = currentDescription.length > 0 && currentStepIndex < currentDescription.length - 1;
 
   return (
     <div 
@@ -587,86 +808,118 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
       )}
       
       <div className={`worksheet-pdf-container ${isTextMode ? 'hidden' : ''} ${isCurrentPageDrmProtected ? 'drm-active' : ''}`}>
-        <Document
-          file={pdfUrl}
-          onLoadSuccess={onDocumentLoadSuccess}
-          onLoadError={onDocumentLoadError}
-          loading={null}
-        >
-          <Page
-            pageNumber={pageIndex}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-            className={`worksheet-page ${isCurrentPageDrmProtected ? 'blurred' : ''}`}
-            width={window.innerWidth > 768 ? 600 : undefined}
-            onLoadSuccess={onPageLoadSuccess}
-          />
-        </Document>
-        
-        {isCurrentPageDrmProtected && !isTextMode && regions.map((region) => (
-          <div
-            key={`clear-${region.id}`}
-            className="worksheet-clear-region"
-            style={{
-              position: 'absolute',
-              left: `${region.x * scaleFactor + pdfPosition.left}px`,
-              top: `${region.y * scaleFactor + pdfPosition.top}px`,
-              width: `${region.width * scaleFactor}px`,
-              height: `${region.height * scaleFactor}px`,
-              overflow: 'hidden',
-              zIndex: 5,
-              border: '2px solid rgba(255, 255, 255, 0.8)',
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            }}
-          >
+        {worksheetMeta?.mode === "auto" ? (
+          // Auto Mode: Display guidance titles
+          <div className="auto-mode-container p-6 max-w-2xl mx-auto">
+            <h2 className="text-2xl font-bold mb-6 text-center text-gradient-clip">
+              {t('worksheet.guidanceTitle', 'Step-by-Step Guidance')}
+            </h2>
+            <div className="space-y-4">
+              {guidanceItems.map((guidance, index) => {
+                const formatted = formatGuidanceForDisplay(guidance);
+                return (
+                  <div
+                    key={guidance.id}
+                    className={`p-4 rounded-lg border-2 transition-all duration-200 ${
+                      formatted.isNonClickable
+                        ? 'font-bold text-green-600 border-green-300 bg-green-50 cursor-default'
+                        : 'border-blue-200 bg-blue-50 hover:border-blue-400 hover:bg-blue-100 cursor-pointer'
+                    }`}
+                    onClick={() => !formatted.isNonClickable && handleGuidanceClick(guidance)}
+                  >
+                    <h3 className={`text-lg ${formatted.isNonClickable ? 'font-bold text-green-600' : 'font-medium text-blue-800'}`}>
+                      {formatted.title}
+                    </h3>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          // Regions Mode: Display PDF with regions
+          <>
             <Document
               file={pdfUrl}
-              className="clear-document"
+              onLoadSuccess={onDocumentLoadSuccess}
+              onLoadError={onDocumentLoadError}
               loading={null}
             >
+              <Page
+                pageNumber={pageIndex}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+                className={`worksheet-page ${isCurrentPageDrmProtected ? 'blurred' : ''}`}
+                width={window.innerWidth > 768 ? 600 : undefined}
+                onLoadSuccess={onPageLoadSuccess}
+              />
+            </Document>
+            
+            {isCurrentPageDrmProtected && !isTextMode && regions.map((region) => (
               <div
-                className="clear-page-container"
+                key={`clear-${region.id}`}
+                className="worksheet-clear-region"
                 style={{
                   position: 'absolute',
-                  left: `-${region.x * scaleFactor}px`,
-                  top: `-${region.y * scaleFactor}px`,
-                  width: `${pdfDimensions.width * scaleFactor}px`,
-                  height: `${pdfDimensions.height * scaleFactor}px`,
-                  filter: 'none !important',
-                  WebkitFilter: 'none !important',
+                  left: `${region.x * scaleFactor + pdfPosition.left}px`,
+                  top: `${region.y * scaleFactor + pdfPosition.top}px`,
+                  width: `${region.width * scaleFactor}px`,
+                  height: `${region.height * scaleFactor}px`,
+                  overflow: 'hidden',
+                  zIndex: 5,
+                  border: '2px solid rgba(255, 255, 255, 0.8)',
+                  backgroundColor: 'rgba(255, 255, 255, 0.1)',
                 }}
               >
-                <Page
-                  pageNumber={pageIndex}
-                  renderTextLayer={false}
-                  renderAnnotationLayer={false}
-                  width={window.innerWidth > 768 ? 600 : undefined}
-                  className="clear-page"
-                />
+                <Document
+                  file={pdfUrl}
+                  className="clear-document"
+                  loading={null}
+                >
+                  <div
+                    className="clear-page-container"
+                    style={{
+                      position: 'absolute',
+                      left: `-${region.x * scaleFactor}px`,
+                      top: `-${region.y * scaleFactor}px`,
+                      width: `${pdfDimensions.width * scaleFactor}px`,
+                      height: `${pdfDimensions.height * scaleFactor}px`,
+                      filter: 'none !important',
+                      WebkitFilter: 'none !important',
+                    }}
+                  >
+                    <Page
+                      pageNumber={pageIndex}
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
+                      width={window.innerWidth > 768 ? 600 : undefined}
+                      className="clear-page"
+                    />
+                  </div>
+                </Document>
               </div>
-            </Document>
-          </div>
-        ))}
-        
-        {regions.map((region) => (
-          <div
-            key={region.id}
-            className="worksheet-region"
-            style={{
-              position: 'absolute',
-              left: `${region.x * scaleFactor + pdfPosition.left}px`,
-              top: `${region.y * scaleFactor + pdfPosition.top}px`,
-              width: `${region.width * scaleFactor}px`,
-              height: `${region.height * scaleFactor}px`,
-              zIndex: 10,
-            }}
-            onClick={() => handleRegionClick(region)}
-            title={region.name}
-          />
-        ))}
+            ))}
+            
+            {regions.map((region) => (
+              <div
+                key={region.id}
+                className="worksheet-region"
+                style={{
+                  position: 'absolute',
+                  left: `${region.x * scaleFactor + pdfPosition.left}px`,
+                  top: `${region.y * scaleFactor + pdfPosition.top}px`,
+                  width: `${region.width * scaleFactor}px`,
+                  height: `${region.height * scaleFactor}px`,
+                  zIndex: 10,
+                }}
+                onClick={() => handleRegionClick(region)}
+                title={region.name}
+              />
+            ))}
+          </>
+        )}
       </div>
       
-      {activeRegion && (
+      {activeContent && (isTextMode || isGuidanceTextMode) && (
         <div className={`worksheet-text-display-container ${isTextMode ? 'active' : 'hidden'}`}>
           {audioAvailable && (
             <video 
@@ -722,7 +975,10 @@ const WorksheetViewer: React.FC<WorksheetViewerProps> = ({
       {numPages && numPages > 0 && (
         <div className="worksheet-info">
           <p className="text-sm text-gray-500 mt-2" dir={t('common.language') === 'العربية' ? 'rtl' : 'ltr'}>
-            {t('worksheet.pageInfo', { current: pageIndex, total: numPages })}
+            {worksheetMeta?.mode === "regions" 
+              ? t('worksheet.pageInfo', { current: pageIndex, total: numPages })
+              : t('worksheet.guidancePage', { current: pageIndex })
+            }
           </p>
         </div>
       )}
