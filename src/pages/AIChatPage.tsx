@@ -14,7 +14,7 @@ import { ChevronLeft, Send, Loader2, User, Bot } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { getTextDirection } from "@/lib/textDirection";
 import SwitchModeButton from "@/components/SwitchModeButton";
-import type { RegionData, WorksheetMetadata } from "@/types/worksheet";
+import type { RegionData, WorksheetMetadata, isAutoModeMetadata } from "@/types/worksheet";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -37,6 +37,7 @@ const AIChatPage: React.FC = () => {
     currentStepIndex?: number;
     pdfUrl?: string;
     worksheetMeta?: WorksheetMetadata;
+    pageDescription?: string; // For Auto Mode
   } | null;
   
   const fromTextMode = locationState?.fromTextMode || false;
@@ -44,6 +45,7 @@ const AIChatPage: React.FC = () => {
   const currentStepIndex = locationState?.currentStepIndex || 0;
   const pdfUrl = locationState?.pdfUrl;
   const worksheetMeta = locationState?.worksheetMeta;
+  const pageDescription = locationState?.pageDescription;
   
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -126,6 +128,12 @@ const AIChatPage: React.FC = () => {
 
   // Load cached page image or generate new one
   useEffect(() => {
+    // Skip image generation if we have page description (Auto Mode)
+    if (pageDescription) {
+      setIsGeneratingImage(false);
+      return;
+    }
+    
     if (!pdfUrl || !pageNumber || !worksheetId) {
       setIsGeneratingImage(false);
       toast({
@@ -153,7 +161,7 @@ const AIChatPage: React.FC = () => {
     
     // If no cached image found, generate a new one
     setIsGeneratingImage(true);
-  }, [pdfUrl, pageNumber, worksheetId]);
+  }, [pdfUrl, pageNumber, worksheetId, pageDescription]);
 
   const onPageLoadSuccess = (page: any) => {
     const canvas = canvasRef.current;
@@ -210,7 +218,7 @@ const AIChatPage: React.FC = () => {
   };
 
   const handleSendMessage = async () => {
-    if (!inputMessage.trim() || isLoading || !pageImage) return;
+    if (!inputMessage.trim() || isLoading || (!pageImage && !pageDescription)) return;
 
     const apiKey = localStorage.getItem('gemini-api-key');
     if (!apiKey) {
@@ -240,8 +248,36 @@ const AIChatPage: React.FC = () => {
         .map(msg => `User: ${msg.content}`)
         .join('\n');
 
-      // Create the prompt with enhanced instructions for distinguishing question types
-      const prompt = `Act as a tutor. You must distinguish between two types of student questions:
+      let prompt: string;
+      let contentParts: any[];
+      
+      if (pageDescription) {
+        // Auto Mode: Use page description as context
+        prompt = `Act as a tutor. You must distinguish between two types of student questions:
+
+1. WORKSHEET QUESTIONS: Questions asking for direct answers to specific worksheet problems, exercises, or tasks shown in the image.
+   - For these questions: NEVER give the direct answer. Instead, provide hints, guide the student's thinking process, ask leading questions, or explain the underlying concepts that will help them solve it themselves.
+   - Examples: "What's the answer to question 3?", "Fill in the blank for me", "What should I write here?", "What's the correct word?"
+
+2. CONCEPTUAL QUESTIONS: Questions asking for understanding of general concepts, explanations, or clarification that are NOT asking for specific worksheet answers.
+   - For these questions: Provide clear, direct explanations and help the student understand the concept fully.
+   - Examples: "What is an adjective?", "How do I identify weather patterns?", "Can you explain what this concept means?", "Why does this work this way?"
+
+IMPORTANT: Always respond in the same language as the content and the user's question.
+
+Previous conversation:
+${conversationHistory}
+
+Page content description:
+${pageDescription}
+Current question: ${userMessage}
+
+Analyze the student's question carefully based on the page content description. If they're asking for a specific worksheet answer, guide them without giving the answer. If they're asking to understand a concept, explain it clearly and directly. Be encouraging and educational in both cases.`;
+
+        contentParts = [prompt];
+      } else if (pageImage) {
+        // Regions Mode: Use page image as context
+        prompt = `Act as a tutor. You must distinguish between two types of student questions:
 
 1. WORKSHEET QUESTIONS: Questions asking for direct answers to specific worksheet problems, exercises, or tasks shown in the image.
    - For these questions: NEVER give the direct answer. Instead, provide hints, guide the student's thinking process, ask leading questions, or explain the underlying concepts that will help them solve it themselves.
@@ -260,17 +296,22 @@ Current question: ${userMessage}
 
 Analyze the student's question carefully. If they're asking for a specific worksheet answer, guide them without giving the answer. If they're asking to understand a concept, explain it clearly and directly. Be encouraging and educational in both cases.`;
 
-      // Convert base64 image to the format expected by Gemini
-      const base64Data = pageImage.split(',')[1]; // Remove data:image/png;base64, prefix
-      
-      const imagePart = {
-        inlineData: {
-          data: base64Data,
-          mimeType: "image/png"
-        }
-      };
+        // Convert base64 image to the format expected by Gemini
+        const base64Data = pageImage.split(',')[1]; // Remove data:image/png;base64, prefix
+        
+        const imagePart = {
+          inlineData: {
+            data: base64Data,
+            mimeType: "image/png"
+          }
+        };
+        
+        contentParts = [prompt, imagePart];
+      } else {
+        throw new Error('No content available for AI analysis');
+      }
 
-      const result = await model.generateContent([prompt, imagePart]);
+      const result = await model.generateContent(contentParts);
       const response = await result.response;
       const aiResponse = response.text();
 
@@ -345,7 +386,7 @@ Analyze the student's question carefully. If they're asking for a specific works
     );
   }
 
-  if (!pdfUrl) {
+  if (!pdfUrl && !pageDescription) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
         <h1 className="text-2xl font-bold text-red-500 mb-4" dir={t('common.language') === 'العربية' ? 'rtl' : 'ltr'}>
@@ -464,13 +505,13 @@ Analyze the student's question carefully. If they're asking for a specific works
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               placeholder={t('aiChat.placeholder')}
-              disabled={isLoading || isGeneratingImage}
+              disabled={isLoading || (isGeneratingImage && !pageDescription)}
               className="flex-1 min-h-[44px] text-base border-gray-300 focus:border-orange-500 focus:ring-orange-500"
               dir={getTextDirection(inputMessage)}
             />
             <Button
               onClick={handleSendMessage}
-              disabled={isLoading || !inputMessage.trim() || isGeneratingImage}
+              disabled={isLoading || !inputMessage.trim() || (isGeneratingImage && !pageDescription)}
               className="bg-gradient-orange-magenta hover:bg-gradient-orange-magenta min-w-[44px] h-[44px] px-3"
             >
               <Send className="h-4 w-4" />
@@ -479,19 +520,17 @@ Analyze the student's question carefully. If they're asking for a specific works
         </div>
       </div>
 
-      {/* Hidden PDF rendering for image generation - only render if no cached image */}
-      {!pageImage && (
+      {/* Hidden PDF rendering for image generation - only render if no cached image and no page description */}
+      {!pageImage && !pageDescription && pdfUrl && (
         <div className="hidden">
-          {pdfUrl && (
-            <Document file={pdfUrl}>
-              <Page
-                pageNumber={parseInt(pageNumber)}
-                onLoadSuccess={onPageLoadSuccess}
-                renderTextLayer={false}
-                renderAnnotationLayer={false}
-              />
-            </Document>
-          )}
+          <Document file={pdfUrl}>
+            <Page
+              pageNumber={parseInt(pageNumber)}
+              onLoadSuccess={onPageLoadSuccess}
+              renderTextLayer={false}
+              renderAnnotationLayer={false}
+            />
+          </Document>
           <canvas ref={canvasRef} />
         </div>
       )}

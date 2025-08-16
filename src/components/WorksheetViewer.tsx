@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, Sparkles, UserRound } from "lucide-react";
 import { getTextDirection } from "@/lib/textDirection";
 import VirtualTutorSelectionModal from "./VirtualTutorSelectionModal";
-import type { WorksheetMetadata, RegionData } from "@/types/worksheet";
+import type { RegionsModeMetadata, RegionData } from "@/types/worksheet";
 
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
@@ -18,7 +18,7 @@ interface StoredRegionData {
 interface WorksheetViewerProps {
   worksheetId: string;
   pageIndex: number;
-  worksheetMeta: WorksheetMetadata;
+  worksheetMeta: RegionsModeMetadata;
   pdfUrl: string;
   onTextModeChange?: (isTextMode: boolean) => void;
   initialActiveRegion?: RegionData | null;

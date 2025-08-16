@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { MessageSquareText } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
-import type { RegionData, WorksheetMetadata } from "@/types/worksheet";
+import type { RegionData, WorksheetMetadata, isAutoModeMetadata } from "@/types/worksheet";
 
 interface AIChatButtonProps {
   worksheetId: string;
@@ -65,16 +65,25 @@ const AIChatButton: React.FC<AIChatButtonProps> = ({
       parsedState: currentSessionState ? JSON.parse(currentSessionState) : null
     });
     
+    // Prepare state for navigation
+    let navigationState: any = { 
+      fromTextMode: isTextModeActive,
+      activeRegion: activeRegion,
+      currentStepIndex: currentStepIndex,
+      pdfUrl: pdfUrl,
+      worksheetMeta: worksheetMeta
+    };
+    
+    // If Auto Mode, add page description for AI context
+    if (isAutoModeMetadata(worksheetMeta)) {
+      const currentPageData = worksheetMeta.data.find(page => page.page_number === pageNumber);
+      if (currentPageData) {
+        navigationState.pageDescription = currentPageData.page_description;
+      }
+    }
+    
     // Navigate to chat page with state including worksheet data
-    navigate(`/chat/${worksheetId}/${pageNumber}`, { 
-      state: { 
-        fromTextMode: isTextModeActive,
-        activeRegion: activeRegion,
-        currentStepIndex: currentStepIndex,
-        pdfUrl: pdfUrl,
-        worksheetMeta: worksheetMeta
-      } 
-    });
+    navigate(`/chat/${worksheetId}/${pageNumber}`, { state: navigationState });
   };
 
   const buttonClasses = cn(
