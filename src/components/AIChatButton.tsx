@@ -24,7 +24,7 @@ const AIChatButton: React.FC<AIChatButtonProps> = ({
   activeRegion,
   currentStepIndex = 0,
   pdfUrl,
-  worksheetMeta
+  worksheetMeta,
   pageDescription
 }) => {
   const navigate = useNavigate();
